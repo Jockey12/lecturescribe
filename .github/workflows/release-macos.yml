@@ -1,0 +1,32 @@
+name: Release macOS test build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: bundle install
+      - run: bundle exec pod install
+        working-directory: macos
+      - run: npm run package:macos
+      - run: gh release create "${GITHUB_REF_NAME}" dist/LectureScribe-macOS-unsigned.zip dist/LectureScribe-macOS-unsigned.zip.sha256 --generate-notes
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LectureScribe-macOS-unsigned
+          path: dist/LectureScribe-macOS-unsigned.zip

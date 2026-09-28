@@ -28,8 +28,10 @@
 @property(nonatomic, copy) NSString *activeTranscriptionModelID;
 @property(nonatomic, copy) NSString *activeSummaryID;
 @property(nonatomic, copy) NSString *activeSummaryModelID;
+@property(nonatomic) BOOL microphonePermissionRequestInFlight;
 - (void)emitTranscriptionStage:(NSString *)stage noteID:(NSString *)noteID;
 - (void)emitSummaryStage:(NSString *)stage noteID:(NSString *)noteID;
+- (void)beginRecordingWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject;
 @end
 
 static bool shouldAbortTranscription(void *userData) {
@@ -245,29 +247,42 @@ RCT_REMAP_METHOD(deleteSummaryModel, deleteSummaryModelID:(NSString *)modelID re
   resolve(@YES);
 }
 
+- (void)beginRecordingWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject {
+  if (self.audioEngine.isRunning) { reject(@"ALREADY_RECORDING", @"A recording is already in progress.", nil); return; }
+  self.recordingID = NSUUID.UUID.UUIDString;
+  NSURL *recordings = [[self applicationSupportURL] URLByAppendingPathComponent:@"Recordings" isDirectory:YES];
+  [[NSFileManager defaultManager] createDirectoryAtURL:recordings withIntermediateDirectories:YES attributes:nil error:nil];
+  NSURL *url = [recordings URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.caf", self.recordingID]];
+  self.audioEngine = [AVAudioEngine new];
+  AVAudioInputNode *input = self.audioEngine.inputNode;
+  AVAudioFormat *format = [input inputFormatForBus:0];
+  NSError *fileError;
+  self.recordingFile = [[AVAudioFile alloc] initForWriting:url settings:format.settings error:&fileError];
+  if (fileError) { self.audioEngine = nil; reject(@"RECORDING_FAILED", fileError.localizedDescription, fileError); return; }
+  [input installTapOnBus:0 bufferSize:4096 format:format block:^(AVAudioPCMBuffer *buffer, AVAudioTime *time) {
+    NSError *writeError;
+    [self.recordingFile writeFromBuffer:buffer error:&writeError];
+  }];
+  NSError *engineError;
+  [self.audioEngine prepare];
+  if (![self.audioEngine startAndReturnError:&engineError]) { [input removeTapOnBus:0]; self.audioEngine = nil; self.recordingFile = nil; reject(@"RECORDING_FAILED", engineError.localizedDescription, engineError); return; }
+  resolve(@{ @"id": self.recordingID });
+}
+
 RCT_REMAP_METHOD(startRecording, startRecordingWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+  AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+  if (status == AVAuthorizationStatusAuthorized) { [self beginRecordingWithResolver:resolve rejecter:reject]; return; }
+  if (status == AVAuthorizationStatusDenied || status == AVAuthorizationStatusRestricted) {
+    reject(@"MICROPHONE_DENIED", @"Allow microphone access for LectureScribe in System Settings > Privacy & Security > Microphone.", nil);
+    return;
+  }
+  if (self.microphonePermissionRequestInFlight) { reject(@"MICROPHONE_PERMISSION_PENDING", @"Microphone permission is already being requested.", nil); return; }
+  self.microphonePermissionRequestInFlight = YES;
   [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
     dispatch_async(dispatch_get_main_queue(), ^{
+      self.microphonePermissionRequestInFlight = NO;
       if (!granted) { reject(@"MICROPHONE_DENIED", @"Microphone access is required to record a note.", nil); return; }
-      if (self.audioEngine.isRunning) { reject(@"ALREADY_RECORDING", @"A recording is already in progress.", nil); return; }
-      self.recordingID = NSUUID.UUID.UUIDString;
-      NSURL *recordings = [[self applicationSupportURL] URLByAppendingPathComponent:@"Recordings" isDirectory:YES];
-      [[NSFileManager defaultManager] createDirectoryAtURL:recordings withIntermediateDirectories:YES attributes:nil error:nil];
-      NSURL *url = [recordings URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.caf", self.recordingID]];
-      self.audioEngine = [AVAudioEngine new];
-      AVAudioInputNode *input = self.audioEngine.inputNode;
-      AVAudioFormat *format = [input inputFormatForBus:0];
-      NSError *fileError;
-      self.recordingFile = [[AVAudioFile alloc] initForWriting:url settings:format.settings error:&fileError];
-      if (fileError) { reject(@"RECORDING_FAILED", fileError.localizedDescription, fileError); return; }
-      [input installTapOnBus:0 bufferSize:4096 format:format block:^(AVAudioPCMBuffer *buffer, AVAudioTime *time) {
-        NSError *writeError;
-        [self.recordingFile writeFromBuffer:buffer error:&writeError];
-      }];
-      NSError *engineError;
-      [self.audioEngine prepare];
-      if (![self.audioEngine startAndReturnError:&engineError]) { [input removeTapOnBus:0]; reject(@"RECORDING_FAILED", engineError.localizedDescription, engineError); return; }
-      resolve(@{ @"id": self.recordingID });
+      [self beginRecordingWithResolver:resolve rejecter:reject];
     });
   }];
 }

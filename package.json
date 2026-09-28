@@ -6,6 +6,7 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "macos": "node scripts/run-macos.js",
+    "package:macos": "node scripts/package-macos.js",
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest"

@@ -51,7 +51,7 @@ The application uses the official model repositories:
 - [LiquidAI/LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF)
 - [unsloth/Qwen3.5-2B-GGUF](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF)
 
-Downloaded model files, recordings, and note data are stored at:
+Downloaded model files, recordings, and note data are stored in the standard direct-distribution macOS location:
 
 ```text
 ~/Library/Application Support/LectureScribe/
@@ -93,7 +93,9 @@ xcodebuild \
 
 ## GitHub Test Builds
 
-GitHub builds are unsigned test builds. macOS may require users to Control-click the app, choose **Open**, then confirm **Open** again.
+GitHub builds are self-contained, ad-hoc-signed test builds. They include the native executable, React Native JavaScript bundle, and required frameworks; users do not need Metro, Node.js, Xcode, or the source repository. Models remain on-demand downloads. They are not notarized.
+
+macOS may require users to Control-click the app, choose **Open**, then confirm **Open** again.
 
 If Gatekeeper still blocks an app that a user intentionally downloaded from this repository:
 
@@ -101,23 +103,19 @@ If Gatekeeper still blocks an app that a user intentionally downloaded from this
 xattr -dr com.apple.quarantine /Applications/LectureScribe.app
 ```
 
-Build and package an unsigned Release app for a GitHub Release:
+Build and package the universal unsigned Release app:
 
 ```sh
-xcodebuild \
-  -workspace "macos/LectureScribe.xcworkspace" \
-  -scheme "LectureScribe-macOS" \
-  -configuration Release \
-  -sdk macosx \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-
-ditto -c -k --sequesterRsrc --keepParent \
-  "/path/to/LectureScribe.app" \
-  "LectureScribe-macOS-unsigned.zip"
+npm run package:macos
 ```
 
-The DerivedData folder name can differ between Macs. Locate the generated `LectureScribe.app` under Xcode's DerivedData folder before running the packaging command.
+The command creates these ignored release artifacts in `dist/`:
+
+- `LectureScribe.app`
+- `LectureScribe-macOS-unsigned.zip`
+- `LectureScribe-macOS-unsigned.zip.sha256`
+
+Git tags beginning with `v`, such as `v0.1.0`, trigger `.github/workflows/release-macos.yml` to build and attach the ZIP and checksum to a GitHub Release.
 
 ## Privacy
 
