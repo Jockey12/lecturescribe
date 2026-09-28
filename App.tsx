@@ -61,6 +61,9 @@ function App() {
   const [summarizingID, setSummarizingID] = useState<string | null>(null);
   const [editingID, setEditingID] = useState<string | null>(null);
   const [selectedNoteID, setSelectedNoteID] = useState<string | null>(null);
+  const [detailSection, setDetailSection] = useState<
+    'summary' | 'points' | 'transcript'
+  >('summary');
 
   const refresh = async () => {
     if (!hasNativeLectureScribe) return;
@@ -516,187 +519,179 @@ function App() {
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              onPress={startRecording}
+              onPress={recording ? stopRecording : startRecording}
               style={styles.toolbarPrimaryButton}
             >
-              <Text style={styles.toolbarPrimaryButtonText}>Record</Text>
+              <Text style={styles.toolbarPrimaryButtonText}>
+                {recording ? formatDuration(elapsed) : 'Record'}
+              </Text>
             </Pressable>
           </View>
         </View>
-        <View style={styles.recordingArea}>
-          <Text style={styles.sectionLabel}>
-            {recording ? 'RECORDING NOW' : 'NEW CLASS NOTE'}
-          </Text>
-          <Text style={styles.timer}>{formatDuration(elapsed)}</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={recording ? stopRecording : startRecording}
-            style={[
-              styles.recordButton,
-              recording && styles.recordButtonActive,
-            ]}
-          >
-            <View style={styles.recordCore} />
-          </Pressable>
-          <Text style={styles.recordHint}>
-            {recording
-              ? 'Click to finish recording'
-              : 'Click to record from your microphone'}
-          </Text>
-        </View>
-
-        <View style={styles.historyHeader}>
-          <Text style={styles.historyTitle}>Previous transcriptions</Text>
-          <Text style={styles.noteCount}>
-            {notes.length} {notes.length === 1 ? 'note' : 'notes'}
-          </Text>
-        </View>
-        <ScrollView contentContainerStyle={styles.noteList}>
-          {notes.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>
-                Your notes will collect here.
-              </Text>
-              <Text style={styles.emptyText}>
-                Record a lecture or import a class audio file to begin.
+        {selectedNote ? (
+          <ScrollView contentContainerStyle={styles.detailContent}>
+            <View style={styles.detailHeader}>
+              <View style={styles.detailTitleBlock}>
+                {editingID === selectedNote.id ? (
+                  <TextInput
+                    autoFocus
+                    defaultValue={selectedNote.title}
+                    onEndEditing={event =>
+                      renameNote(selectedNote, event.nativeEvent.text)
+                    }
+                    style={styles.detailTitleInput}
+                  />
+                ) : (
+                  <Pressable onPress={() => setEditingID(selectedNote.id)}>
+                    <Text style={styles.detailTitle}>{selectedNote.title}</Text>
+                  </Pressable>
+                )}
+                <Text style={styles.detailMeta}>
+                  {formatDate(selectedNote.createdAt)} ·{' '}
+                  {formatDuration(selectedNote.duration)} ·{' '}
+                  {selectedNote.source === 'import' ? 'Imported' : 'Recorded'}
+                </Text>
+              </View>
+              <View style={styles.detailActions}>
+                <Pressable
+                  onPress={() => exportMarkdown(selectedNote)}
+                  style={styles.toolbarButton}
+                >
+                  <Text style={styles.toolbarButtonText}>Export</Text>
+                </Pressable>
+                <Pressable
+                  disabled={selectedNote.status === 'transcribing'}
+                  onPress={() => deleteNote(selectedNote)}
+                  style={styles.toolbarButton}
+                >
+                  <Text style={styles.deleteActionText}>Delete</Text>
+                </Pressable>
+              </View>
+            </View>
+            <View style={styles.playbackBar}>
+              <Pressable
+                onPress={() => togglePlayback(selectedNote.id)}
+                style={styles.playbackButton}
+              >
+                <Text style={styles.playbackButtonText}>
+                  {playingID === selectedNote.id ? 'Stop' : 'Play'}
+                </Text>
+              </Pressable>
+              <View style={styles.playbackTrack}>
+                <View style={styles.playbackProgress} />
+              </View>
+              <Text style={styles.playbackDuration}>
+                {formatDuration(selectedNote.duration)}
               </Text>
             </View>
-          ) : (
-            notes.map(note => (
-              <View key={note.id} style={styles.noteCard}>
-                <View style={styles.noteTopLine}>
-                  <View>
-                    {editingID === note.id ? (
-                      <TextInput
-                        autoFocus
-                        defaultValue={note.title}
-                        onEndEditing={event =>
-                          renameNote(note, event.nativeEvent.text)
-                        }
-                        style={styles.titleInput}
-                      />
-                    ) : (
-                      <Pressable onPress={() => setEditingID(note.id)}>
-                        <Text style={styles.noteTitle}>{note.title}</Text>
-                      </Pressable>
-                    )}
-                    <Text style={styles.noteMeta}>
-                      {formatDate(note.createdAt)} ·{' '}
-                      {formatDuration(note.duration)} ·{' '}
-                      {note.source === 'import' ? 'Imported' : 'Recorded'}
-                    </Text>
-                  </View>
+            <View style={styles.segmentedControl}>
+              {(['summary', 'points', 'transcript'] as const).map(section => (
+                <Pressable
+                  key={section}
+                  onPress={() => setDetailSection(section)}
+                  style={[
+                    styles.segment,
+                    detailSection === section && styles.segmentSelected,
+                  ]}
+                >
                   <Text
                     style={[
-                      styles.status,
-                      note.status === 'complete' && styles.statusComplete,
+                      styles.segmentText,
+                      detailSection === section && styles.segmentTextSelected,
                     ]}
                   >
-                    {note.status === 'transcribing'
-                      ? 'Transcribing'
-                      : note.status === 'complete'
-                      ? 'Complete'
-                      : 'Ready'}
+                    {section === 'summary'
+                      ? 'Summary'
+                      : section === 'points'
+                      ? 'Study Points'
+                      : 'Transcript'}
                   </Text>
-                </View>
-                {note.transcript ? (
-                  <Text numberOfLines={3} style={styles.transcript}>
-                    {note.transcript.trim()}
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.readingColumn}>
+              {detailSection === 'summary' ? (
+                <Text style={styles.readingText}>
+                  {selectedNote.summary ??
+                    'Summarize this transcript when you are ready to review it.'}
+                </Text>
+              ) : null}
+              {detailSection === 'points' ? (
+                selectedNote.mainPoints?.length ? (
+                  selectedNote.mainPoints.map(point => (
+                    <Text key={point} style={styles.pointText}>
+                      • {point}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.readingText}>
+                    Study points will appear with the summary.
+                  </Text>
+                )
+              ) : null}
+              {detailSection === 'transcript' ? (
+                selectedNote.transcript ? (
+                  <Text style={styles.transcriptText}>
+                    {selectedNote.transcript.trim()}
                   </Text>
                 ) : (
-                  <Text style={styles.noTranscript}>No transcript yet.</Text>
-                )}
-                {note.summary ? (
-                  <View style={styles.summaryBlock}>
-                    <Text style={styles.summaryLabel}>STUDY NOTES</Text>
-                    <Text style={styles.summaryText}>{note.summary}</Text>
-                    {note.mainPoints?.map(point => (
-                      <Text key={point} style={styles.mainPoint}>
-                        - {point}
-                      </Text>
-                    ))}
-                  </View>
-                ) : null}
-                <View style={styles.noteActions}>
-                  <Pressable
-                    onPress={() => togglePlayback(note.id)}
-                    style={styles.secondaryAction}
-                  >
-                    <Text style={styles.secondaryActionText}>
-                      {playingID === note.id ? 'Stop audio' : 'Listen'}
-                    </Text>
-                  </Pressable>
-                  {note.status === 'transcribing' ? (
-                    <Pressable
-                      disabled={cancellingID === note.id}
-                      onPress={() => cancelTranscription(note.id)}
-                      style={[
-                        styles.secondaryAction,
-                        cancellingID === note.id && styles.actionDisabled,
-                      ]}
-                    >
-                      <Text style={styles.secondaryActionText}>
-                        {cancellingID === note.id ? 'Cancelling…' : 'Cancel'}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  {note.status === 'complete' ? (
-                    <Pressable
-                      disabled={Boolean(summarizingID)}
-                      onPress={() => summarize(note)}
-                      style={[
-                        styles.secondaryAction,
-                        summarizingID && styles.actionDisabled,
-                      ]}
-                    >
-                      <Text style={styles.secondaryActionText}>
-                        {summarizingID === note.id
-                          ? summaryStages[note.id] ?? 'Preparing summary…'
-                          : note.summary
-                          ? 'Summarize again'
-                          : 'Summarize'}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    onPress={() => exportMarkdown(note)}
-                    style={styles.secondaryAction}
-                  >
-                    <Text style={styles.secondaryActionText}>
-                      Export Markdown
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    disabled={note.status === 'transcribing'}
-                    onPress={() => deleteNote(note)}
-                    style={[
-                      styles.secondaryAction,
-                      note.status === 'transcribing' && styles.actionDisabled,
-                    ]}
-                  >
-                    <Text style={styles.deleteActionText}>Delete</Text>
-                  </Pressable>
-                  <Pressable
-                    disabled={Boolean(activeTranscriptionID)}
-                    onPress={() => transcribe(note)}
-                    style={[
-                      styles.primaryAction,
-                      activeTranscriptionID && styles.actionDisabled,
-                    ]}
-                  >
-                    <Text style={styles.primaryActionText}>
-                      {note.status === 'transcribing'
-                        ? transcriptionStages[note.id] ?? 'Preparing audio…'
-                        : note.status === 'complete'
-                        ? 'Transcribe again'
-                        : 'Transcribe'}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))
-          )}
-        </ScrollView>
+                  <Text style={styles.readingText}>
+                    Transcribe this recording to read the lecture here.
+                  </Text>
+                )
+              ) : null}
+            </View>
+            <View style={styles.noteActions}>
+              {selectedNote.status === 'transcribing' ? (
+                <Pressable
+                  disabled={cancellingID === selectedNote.id}
+                  onPress={() => cancelTranscription(selectedNote.id)}
+                  style={styles.secondaryAction}
+                >
+                  <Text style={styles.secondaryActionText}>
+                    {cancellingID === selectedNote.id
+                      ? 'Cancelling…'
+                      : 'Cancel Transcription'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {selectedNote.status === 'complete' ? (
+                <Pressable
+                  disabled={Boolean(summarizingID)}
+                  onPress={() => summarize(selectedNote)}
+                  style={styles.secondaryAction}
+                >
+                  <Text style={styles.secondaryActionText}>
+                    {summarizingID === selectedNote.id
+                      ? summaryStages[selectedNote.id] ?? 'Preparing summary…'
+                      : selectedNote.summary
+                      ? 'Summarize Again'
+                      : 'Summarize'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                disabled={Boolean(activeTranscriptionID)}
+                onPress={() => transcribe(selectedNote)}
+                style={styles.primaryAction}
+              >
+                <Text style={styles.primaryActionText}>
+                  {selectedNote.status === 'transcribing'
+                    ? transcriptionStages[selectedNote.id] ?? 'Preparing audio…'
+                    : selectedNote.status === 'complete'
+                    ? 'Transcribe Again'
+                    : 'Transcribe'}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        ) : (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>
+              Download a transcription model, then record or import audio.
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -856,6 +851,108 @@ const styles = StyleSheet.create({
     fontSize: type.body,
     fontWeight: '600',
     color: color.selectedText,
+  },
+  detailContent: {
+    paddingHorizontal: space[8],
+    paddingTop: space[8],
+    paddingBottom: space[12],
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: space[4],
+  },
+  detailTitleBlock: { flex: 1 },
+  detailTitle: {
+    fontSize: type.display,
+    lineHeight: 34,
+    color: color.label,
+    fontWeight: '600',
+  },
+  detailTitleInput: {
+    padding: 0,
+    fontSize: type.display,
+    lineHeight: 34,
+    color: color.label,
+    fontWeight: '600',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: color.accent,
+  },
+  detailMeta: {
+    marginTop: space[1],
+    fontSize: type.body,
+    color: color.secondaryLabel,
+    fontVariant: ['tabular-nums'],
+  },
+  detailActions: { flexDirection: 'row', alignItems: 'flex-start' },
+  playbackBar: {
+    marginTop: space[6],
+    paddingVertical: space[3],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: color.separator,
+  },
+  playbackButton: {
+    minHeight: control.compactHeight,
+    paddingHorizontal: space[3],
+    justifyContent: 'center',
+    borderRadius: 5,
+    backgroundColor: color.controlBackground,
+  },
+  playbackButtonText: {
+    fontSize: type.body,
+    color: color.label,
+    fontWeight: '500',
+  },
+  playbackTrack: {
+    height: 3,
+    flex: 1,
+    borderRadius: 2,
+    backgroundColor: color.separator,
+  },
+  playbackProgress: {
+    width: '0%',
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: color.accent,
+  },
+  playbackDuration: {
+    fontSize: type.caption,
+    color: color.secondaryLabel,
+    fontVariant: ['tabular-nums'],
+  },
+  segmentedControl: {
+    marginTop: space[5],
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    padding: 2,
+    borderRadius: 6,
+    backgroundColor: color.controlBackground,
+  },
+  segment: {
+    paddingHorizontal: space[3],
+    minHeight: control.compactHeight,
+    justifyContent: 'center',
+    borderRadius: 4,
+  },
+  segmentSelected: { backgroundColor: color.textBackground },
+  segmentText: { fontSize: type.body, color: color.secondaryLabel },
+  segmentTextSelected: { color: color.label, fontWeight: '500' },
+  readingColumn: { maxWidth: 620, marginTop: space[6] },
+  readingText: {
+    fontSize: type.title,
+    lineHeight: 27,
+    color: color.secondaryLabel,
+  },
+  transcriptText: { fontSize: type.title, lineHeight: 28, color: color.label },
+  pointText: {
+    marginBottom: space[3],
+    fontSize: type.title,
+    lineHeight: 26,
+    color: color.label,
   },
   recordingArea: {
     alignItems: 'center',
