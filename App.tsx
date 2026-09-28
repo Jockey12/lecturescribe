@@ -1,4 +1,9 @@
-import { useEffect, useState } from 'react';
+import {
+  type ComponentProps,
+  type ComponentType,
+  useEffect,
+  useState,
+} from 'react';
 import {
   Alert,
   PlatformColor,
@@ -35,6 +40,13 @@ const formatDate = (timestamp: number) =>
     minute: '2-digit',
   }).format(timestamp);
 
+type MacKeyEvent = { nativeEvent: { key: string; metaKey: boolean } };
+type MacViewProps = ComponentProps<typeof View> & {
+  keyDownEvents?: Array<{ key: string; metaKey?: boolean }>;
+  onKeyDown?: (event: MacKeyEvent) => void;
+};
+const MacView = View as unknown as ComponentType<MacViewProps>;
+
 function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [models, setModels] = useState<Model[]>([]);
@@ -65,6 +77,8 @@ function App() {
   const [detailSection, setDetailSection] = useState<
     'summary' | 'points' | 'transcript'
   >('summary');
+  const [transcriptSearchVisible, setTranscriptSearchVisible] = useState(false);
+  const [transcriptSearch, setTranscriptSearch] = useState('');
 
   const refresh = async () => {
     if (!hasNativeLectureScribe) return;
@@ -350,9 +364,38 @@ function App() {
   const activeTranscriptionID = notes.find(
     note => note.status === 'transcribing',
   )?.id;
+  const transcriptMatches =
+    selectedNote?.transcript && transcriptSearch
+      ? selectedNote.transcript
+          .toLocaleLowerCase()
+          .split(transcriptSearch.toLocaleLowerCase()).length - 1
+      : 0;
+  const handleKeyDown = (event: MacKeyEvent) => {
+    const { key, metaKey } = event.nativeEvent;
+    if (metaKey && key.toLowerCase() === 'n') {
+      recording ? stopRecording() : startRecording();
+    } else if (key === ' ') {
+      if (selectedNote) togglePlayback(selectedNote.id);
+    } else if (metaKey && key.toLowerCase() === 'f') {
+      setDetailSection('transcript');
+      setTranscriptSearchVisible(true);
+    } else if (metaKey && key.toLowerCase() === 'e' && selectedNote) {
+      exportMarkdown(selectedNote);
+    }
+  };
 
   return (
-    <View style={styles.app}>
+    <MacView
+      focusable
+      keyDownEvents={[
+        { key: 'n', metaKey: true },
+        { key: ' ' },
+        { key: 'f', metaKey: true },
+        { key: 'e', metaKey: true },
+      ]}
+      onKeyDown={handleKeyDown}
+      style={styles.app}
+    >
       <StatusBar barStyle="dark-content" />
       <View style={styles.sidebar}>
         <View style={styles.sidebarHeader}>
@@ -540,6 +583,21 @@ function App() {
             ) : null}
           </View>
           <View style={styles.toolbarActions}>
+            {transcriptSearchVisible ? (
+              <View style={styles.searchField}>
+                <TextInput
+                  autoFocus
+                  value={transcriptSearch}
+                  onChangeText={setTranscriptSearch}
+                  placeholder="Search transcript"
+                  placeholderTextColor={color.tertiaryLabel}
+                  style={styles.searchInput}
+                />
+                <Text style={styles.searchCount}>
+                  {transcriptMatches || ''}
+                </Text>
+              </View>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               onPress={importAudio}
@@ -723,7 +781,7 @@ function App() {
           </View>
         )}
       </View>
-    </View>
+    </MacView>
   );
 }
 
@@ -901,6 +959,23 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   toolbarActions: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  searchField: {
+    width: 180,
+    minHeight: control.compactHeight,
+    paddingHorizontal: space[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: color.separator,
+    borderRadius: 5,
+    backgroundColor: color.textBackground,
+  },
+  searchInput: { flex: 1, padding: 0, color: color.label, fontSize: type.body },
+  searchCount: {
+    fontSize: type.caption,
+    color: color.secondaryLabel,
+    fontVariant: ['tabular-nums'],
+  },
   toolbarButton: {
     paddingHorizontal: space[2],
     justifyContent: 'center',
