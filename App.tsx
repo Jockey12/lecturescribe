@@ -60,6 +60,7 @@ function App() {
   );
   const [summarizingID, setSummarizingID] = useState<string | null>(null);
   const [editingID, setEditingID] = useState<string | null>(null);
+  const [selectedNoteID, setSelectedNoteID] = useState<string | null>(null);
 
   const refresh = async () => {
     if (!hasNativeLectureScribe) return;
@@ -340,6 +341,8 @@ function App() {
   const currentSummaryModel = summaryModels.find(
     model => model.id === summaryModelID,
   );
+  const selectedNote =
+    notes.find(note => note.id === selectedNoteID) ?? notes[0];
   const activeTranscriptionID = notes.find(
     note => note.status === 'transcribing',
   )?.id;
@@ -362,6 +365,57 @@ function App() {
           <Text style={styles.sourceListLabel}>NOTES</Text>
           <Text style={styles.sourceListCount}>{notes.length}</Text>
         </View>
+        <ScrollView
+          style={styles.sourceList}
+          contentContainerStyle={styles.sourceListContent}
+        >
+          {notes.map(note => (
+            <Pressable
+              key={note.id}
+              accessibilityRole="button"
+              onPress={() => setSelectedNoteID(note.id)}
+              style={[
+                styles.noteRow,
+                selectedNote?.id === note.id && styles.noteRowSelected,
+              ]}
+            >
+              <View style={styles.noteRowTitleLine}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.noteRowTitle,
+                    selectedNote?.id === note.id && styles.noteRowTextSelected,
+                  ]}
+                >
+                  {note.title}
+                </Text>
+                <Text
+                  style={[
+                    styles.noteRowStatus,
+                    selectedNote?.id === note.id && styles.noteRowTextSelected,
+                  ]}
+                >
+                  {note.status === 'complete'
+                    ? 'Summarized'
+                    : note.status === 'transcribing'
+                    ? 'Transcribing'
+                    : note.transcript
+                    ? 'Transcribed'
+                    : 'Recorded'}
+                </Text>
+              </View>
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.noteRowMeta,
+                  selectedNote?.id === note.id && styles.noteRowTextSelected,
+                ]}
+              >
+                {formatDate(note.createdAt)} · {formatDuration(note.duration)}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
         <View style={styles.modelPanel}>
           <Text style={styles.panelLabel}>LOCAL TRANSCRIPTION</Text>
           {models.map(model => (
@@ -700,6 +754,33 @@ const styles = StyleSheet.create({
     color: color.tertiaryLabel,
     fontVariant: ['tabular-nums'],
   },
+  sourceList: { flexGrow: 0, marginTop: space[2], maxHeight: 260 },
+  sourceListContent: { paddingBottom: space[2] },
+  noteRow: {
+    paddingHorizontal: space[2],
+    paddingVertical: space[2],
+    borderRadius: 5,
+  },
+  noteRowSelected: { backgroundColor: color.selectedContentBackground },
+  noteRowTitleLine: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: space[1],
+  },
+  noteRowTitle: {
+    flex: 1,
+    fontSize: type.body,
+    color: color.label,
+    fontWeight: '500',
+  },
+  noteRowMeta: {
+    marginTop: 2,
+    fontSize: type.caption,
+    color: color.secondaryLabel,
+    fontVariant: ['tabular-nums'],
+  },
+  noteRowStatus: { fontSize: type.caption, color: color.secondaryLabel },
+  noteRowTextSelected: { color: color.selectedText },
   modelPanel: { marginTop: 45 },
   panelLabel: {
     marginTop: 22,
