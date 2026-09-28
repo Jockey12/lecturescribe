@@ -1,19 +1,16 @@
-import { PlatformColor } from 'react-native';
-
 export const color = {
-  accent: PlatformColor('controlAccentColor'),
-  background: PlatformColor('windowBackgroundColor'),
-  controlBackground: PlatformColor('controlBackgroundColor'),
-  label: PlatformColor('labelColor'),
-  secondaryLabel: PlatformColor('secondaryLabelColor'),
-  separator: PlatformColor('separatorColor'),
-  selectedContentBackground: PlatformColor('selectedContentBackgroundColor'),
-  selectedText: PlatformColor('selectedTextColor'),
-  tertiaryLabel: PlatformColor('tertiaryLabelColor'),
-  textBackground: PlatformColor('textBackgroundColor'),
-  unobtrusiveSelectedContentBackground: PlatformColor(
-    'unemphasizedSelectedContentBackgroundColor',
-  ),
+  accent: '#007aff',
+  background: '#ffffff',
+  controlBackground: '#f5f5f7',
+  danger: '#ff3b30',
+  label: '#1d1d1f',
+  secondaryLabel: '#6e6e73',
+  separator: '#c6c6c8',
+  selectedContentBackground: '#007aff',
+  selectedText: '#ffffff',
+  tertiaryLabel: '#8e8e93',
+  textBackground: '#ffffff',
+  unobtrusiveSelectedContentBackground: '#d9eaff',
 } as const;
 
 export const space = {

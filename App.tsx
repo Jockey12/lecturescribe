@@ -6,7 +6,6 @@ import {
 } from 'react';
 import {
   Alert,
-  PlatformColor,
   Pressable,
   ScrollView,
   StatusBar,
@@ -42,6 +41,7 @@ const formatDate = (timestamp: number) =>
 
 type MacKeyEvent = { nativeEvent: { key: string; metaKey: boolean } };
 type MacViewProps = ComponentProps<typeof View> & {
+  allowsVibrancy?: boolean;
   keyDownEvents?: Array<{ key: string; metaKey?: boolean }>;
   onKeyDown?: (event: MacKeyEvent) => void;
 };
@@ -397,7 +397,7 @@ function App() {
       style={styles.app}
     >
       <StatusBar barStyle="dark-content" />
-      <View style={styles.sidebar}>
+      <MacView allowsVibrancy style={styles.sidebar}>
         <View style={styles.sidebarHeader}>
           <Text style={styles.sidebarTitle}>LectureScribe</Text>
           <Pressable
@@ -558,10 +558,10 @@ function App() {
         <Pressable onPress={importAudio} style={styles.importButton}>
           <Text style={styles.importText}>Import audio</Text>
         </Pressable>
-      </View>
+      </MacView>
 
       <View style={styles.workspace}>
-        <View style={styles.toolbar}>
+        <MacView allowsVibrancy style={styles.toolbar}>
           <View style={styles.toolbarHeading}>
             <Text style={styles.toolbarTitle}>
               {recording ? 'Recording' : 'All Notes'}
@@ -615,7 +615,7 @@ function App() {
               </Text>
             </Pressable>
           </View>
-        </View>
+        </MacView>
         {selectedNote ? (
           <ScrollView contentContainerStyle={styles.detailContent}>
             <View style={styles.detailHeader}>
@@ -940,7 +940,7 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: PlatformColor('systemRedColor'),
+    backgroundColor: color.danger,
   },
   levelMeter: {
     height: 18,
@@ -1122,7 +1122,7 @@ const styles = StyleSheet.create({
     borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: PlatformColor('systemRedColor'),
+    backgroundColor: color.danger,
   },
   recordButtonActive: { opacity: 0.8 },
   recordCore: {
@@ -1241,7 +1241,7 @@ const styles = StyleSheet.create({
   deleteActionText: {
     fontSize: type.body,
     fontWeight: '500',
-    color: PlatformColor('systemRedColor'),
+    color: color.danger,
   },
   primaryAction: {
     paddingVertical: 8,
