@@ -1,8 +1,6 @@
 # LectureScribe
 
-vibe coded
-
----
+## ![preview](./preview.png)
 
 LectureScribe is a local-first macOS app for recording or importing lectures, transcribing them on-device, and turning completed transcripts into study notes.
 
