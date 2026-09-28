@@ -1,5 +1,9 @@
 # LectureScribe
 
+vibe coded
+
+---
+
 LectureScribe is a local-first macOS app for recording or importing lectures, transcribing them on-device, and turning completed transcripts into study notes.
 
 Audio, transcripts, and generated summaries stay on your Mac. An internet connection is used only when you explicitly download a model.
@@ -36,10 +40,10 @@ npm run macos
 
 Models are downloaded only after selecting the corresponding download control in the app.
 
-| Purpose       | Model                                  | Download size |
-| ------------- | -------------------------------------- | ------------- |
-| Transcription | Whisper Base, Small, or Medium (multilingual); Small English | 142 MB to 1.53 GB |
-| Study notes   | LFM2.5-1.2B-Instruct Q4_K_M or Qwen3.5-2B Q4_K_M | 1.17 GB to 1.28 GB |
+| Purpose       | Model                                                        | Download size      |
+| ------------- | ------------------------------------------------------------ | ------------------ |
+| Transcription | Whisper Base, Small, or Medium (multilingual); Small English | 142 MB to 1.53 GB  |
+| Study notes   | LFM2.5-1.2B-Instruct Q4_K_M or Qwen3.5-2B Q4_K_M             | 1.17 GB to 1.28 GB |
 
 The application uses the official model repositories:
 
