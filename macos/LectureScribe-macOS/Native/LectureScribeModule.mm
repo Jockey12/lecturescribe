@@ -25,7 +25,9 @@
 @property(nonatomic) NSMutableArray<NSMutableDictionary *> *notes;
 @property(nonatomic) NSMutableDictionary<NSString *, TranscriptionCancellation *> *activeTranscriptions;
 @property(nonatomic, copy) NSString *activeTranscriptionID;
+@property(nonatomic, copy) NSString *activeTranscriptionModelID;
 @property(nonatomic, copy) NSString *activeSummaryID;
+@property(nonatomic, copy) NSString *activeSummaryModelID;
 - (void)emitTranscriptionStage:(NSString *)stage noteID:(NSString *)noteID;
 - (void)emitSummaryStage:(NSString *)stage noteID:(NSString *)noteID;
 @end
@@ -119,6 +121,12 @@ RCT_EXPORT_MODULE(LectureScribe)
 }
 
 - (NSDictionary *)modelForID:(NSString *)modelID {
+  if ([modelID isEqualToString:@"base"]) {
+    return @{ @"id": @"base", @"name": @"Whisper Base", @"size": @"142 MB", @"url": @"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin" };
+  }
+  if ([modelID isEqualToString:@"medium"]) {
+    return @{ @"id": @"medium", @"name": @"Whisper Medium", @"size": @"1.53 GB", @"url": @"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin" };
+  }
   if ([modelID isEqualToString:@"small.en"]) {
     return @{ @"id": @"small.en", @"name": @"Whisper Small English", @"size": @"466 MB", @"url": @"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin" };
   }
@@ -126,7 +134,7 @@ RCT_EXPORT_MODULE(LectureScribe)
 }
 
 - (BOOL)isSupportedModelID:(NSString *)modelID {
-  return [modelID isEqualToString:@"small"] || [modelID isEqualToString:@"small.en"];
+  return [@[ @"base", @"small", @"medium", @"small.en" ] containsObject:modelID];
 }
 
 - (NSURL *)modelURL:(NSString *)modelID {
@@ -135,14 +143,22 @@ RCT_EXPORT_MODULE(LectureScribe)
   return [models URLByAppendingPathComponent:[NSString stringWithFormat:@"ggml-%@.bin", modelID]];
 }
 
-- (NSDictionary *)summaryModel {
+- (NSDictionary *)summaryModelForID:(NSString *)modelID {
+  if ([modelID isEqualToString:@"qwen3.5-2b-q4-k-m"]) {
+    return @{ @"id": @"qwen3.5-2b-q4-k-m", @"name": @"Qwen3.5 2B Instruct", @"size": @"1.28 GB", @"url": @"https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf" };
+  }
   return @{ @"id": @"lfm2.5-1.2b-q4-k-m", @"name": @"LFM2.5 1.2B Instruct", @"size": @"1.17 GB", @"url": @"https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_K_M.gguf" };
 }
 
-- (NSURL *)summaryModelURL {
+- (BOOL)isSupportedSummaryModelID:(NSString *)modelID {
+  return [@[ @"lfm2.5-1.2b-q4-k-m", @"qwen3.5-2b-q4-k-m" ] containsObject:modelID];
+}
+
+- (NSURL *)summaryModelURL:(NSString *)modelID {
   NSURL *models = [[self applicationSupportURL] URLByAppendingPathComponent:@"Models" isDirectory:YES];
   [[NSFileManager defaultManager] createDirectoryAtURL:models withIntermediateDirectories:YES attributes:nil error:nil];
-  return [models URLByAppendingPathComponent:@"LFM2.5-1.2B-Instruct-Q4_K_M.gguf"];
+  NSString *sourceURL = [self summaryModelForID:modelID][@"url"];
+  return [models URLByAppendingPathComponent:sourceURL.lastPathComponent];
 }
 
 RCT_REMAP_METHOD(getNotes, getNotesWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
@@ -151,7 +167,7 @@ RCT_REMAP_METHOD(getNotes, getNotesWithResolver:(RCTPromiseResolveBlock)resolve 
 
 RCT_REMAP_METHOD(getModels, getModelsWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
   NSMutableArray *models = [NSMutableArray array];
-  for (NSString *modelID in @[ @"small", @"small.en" ]) {
+  for (NSString *modelID in @[ @"base", @"small", @"medium", @"small.en" ]) {
     NSMutableDictionary *model = [[self modelForID:modelID] mutableCopy];
     model[@"installed"] = @([[NSFileManager defaultManager] fileExistsAtPath:[self modelURL:modelID].path]);
     [models addObject:model];
@@ -180,16 +196,30 @@ RCT_REMAP_METHOD(downloadModel, modelID:(NSString *)modelID resolver:(RCTPromise
   [task resume];
 }
 
-RCT_REMAP_METHOD(getSummaryModel, getSummaryModelWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
-  NSMutableDictionary *model = [[self summaryModel] mutableCopy];
-  model[@"installed"] = @([[NSFileManager defaultManager] fileExistsAtPath:self.summaryModelURL.path]);
-  resolve(model);
+RCT_REMAP_METHOD(deleteModel, deleteModelID:(NSString *)modelID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+  if (![self isSupportedModelID:modelID]) { reject(@"UNKNOWN_MODEL", @"This Whisper model is not available.", nil); return; }
+  if ([self.activeTranscriptionModelID isEqualToString:modelID]) { reject(@"MODEL_IN_USE", @"Wait for the current transcription to finish or cancel it before deleting this model.", nil); return; }
+  NSURL *modelURL = [self modelURL:modelID];
+  NSError *error;
+  if ([[NSFileManager defaultManager] fileExistsAtPath:modelURL.path] && ![[NSFileManager defaultManager] removeItemAtURL:modelURL error:&error]) { reject(@"MODEL_DELETE_FAILED", error.localizedDescription, error); return; }
+  resolve(@YES);
 }
 
-RCT_REMAP_METHOD(downloadSummaryModel, downloadSummaryModelWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
-  NSURL *destination = self.summaryModelURL;
+RCT_REMAP_METHOD(getSummaryModels, getSummaryModelsWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+  NSMutableArray *models = [NSMutableArray array];
+  for (NSString *modelID in @[ @"lfm2.5-1.2b-q4-k-m", @"qwen3.5-2b-q4-k-m" ]) {
+    NSMutableDictionary *model = [[self summaryModelForID:modelID] mutableCopy];
+    model[@"installed"] = @([[NSFileManager defaultManager] fileExistsAtPath:[self summaryModelURL:modelID].path]);
+    [models addObject:model];
+  }
+  resolve(models);
+}
+
+RCT_REMAP_METHOD(downloadSummaryModel, summaryModelID:(NSString *)modelID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+  if (![self isSupportedSummaryModelID:modelID]) { reject(@"UNKNOWN_SUMMARY_MODEL", @"This summary model is not available.", nil); return; }
+  NSURL *destination = [self summaryModelURL:modelID];
   if ([[NSFileManager defaultManager] fileExistsAtPath:destination.path]) { resolve(@YES); return; }
-  NSURL *source = [NSURL URLWithString:[self summaryModel][@"url"]];
+  NSURL *source = [NSURL URLWithString:[self summaryModelForID:modelID][@"url"]];
   NSURLSessionDownloadTask *task = [[NSURLSession sharedSession] downloadTaskWithURL:source completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
     NSHTTPURLResponse *httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
     if (error || !location || httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
@@ -204,6 +234,15 @@ RCT_REMAP_METHOD(downloadSummaryModel, downloadSummaryModelWithResolver:(RCTProm
     resolve(@YES);
   }];
   [task resume];
+}
+
+RCT_REMAP_METHOD(deleteSummaryModel, deleteSummaryModelID:(NSString *)modelID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+  if (![self isSupportedSummaryModelID:modelID]) { reject(@"UNKNOWN_SUMMARY_MODEL", @"This summary model is not available.", nil); return; }
+  if ([self.activeSummaryModelID isEqualToString:modelID]) { reject(@"SUMMARY_MODEL_IN_USE", @"Wait for the current summary to finish before deleting this model.", nil); return; }
+  NSURL *modelURL = [self summaryModelURL:modelID];
+  NSError *error;
+  if ([[NSFileManager defaultManager] fileExistsAtPath:modelURL.path] && ![[NSFileManager defaultManager] removeItemAtURL:modelURL error:&error]) { reject(@"SUMMARY_MODEL_DELETE_FAILED", error.localizedDescription, error); return; }
+  resolve(@YES);
 }
 
 RCT_REMAP_METHOD(startRecording, startRecordingWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
@@ -339,7 +378,7 @@ RCT_REMAP_METHOD(exportMarkdown, exportNoteID:(NSString *)noteID resolver:(RCTPr
   NSMutableDictionary *note = [self noteWithID:noteID];
   if (!note) { reject(@"NOTE_NOT_FOUND", @"This note no longer exists.", nil); return; }
   NSSavePanel *panel = [NSSavePanel savePanel];
-  panel.allowedFileTypes = @[ @"md" ];
+  panel.allowedContentTypes = @[ UTTypeMarkdown ];
   panel.nameFieldStringValue = [NSString stringWithFormat:@"%@.md", note[@"title"]];
   if ([panel runModal] != NSModalResponseOK) { resolve(nil); return; }
   NSError *writeError;
@@ -399,6 +438,7 @@ RCT_REMAP_METHOD(transcribe, noteID:(NSString *)noteID modelID:(NSString *)model
   cancellation.module = self;
   self.activeTranscriptions[noteID] = cancellation;
   self.activeTranscriptionID = noteID;
+  self.activeTranscriptionModelID = modelID;
   note[@"status"] = @"transcribing";
   [self saveNotes];
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -408,6 +448,7 @@ RCT_REMAP_METHOD(transcribe, noteID:(NSString *)noteID modelID:(NSString *)model
     if (!sampleData) { dispatch_async(dispatch_get_main_queue(), ^{
       [self.activeTranscriptions removeObjectForKey:noteID];
       self.activeTranscriptionID = nil;
+      self.activeTranscriptionModelID = nil;
       note[@"status"] = previousStatus;
       [self saveNotes];
       if (cancellation.isCancelled) resolve(note); else reject(@"AUDIO_CONVERSION_FAILED", sampleError.localizedDescription ?: @"Unable to prepare the audio.", sampleError);
@@ -421,6 +462,7 @@ RCT_REMAP_METHOD(transcribe, noteID:(NSString *)noteID modelID:(NSString *)model
     if (!context) { dispatch_async(dispatch_get_main_queue(), ^{
       [self.activeTranscriptions removeObjectForKey:noteID];
       self.activeTranscriptionID = nil;
+      self.activeTranscriptionModelID = nil;
       note[@"status"] = previousStatus;
       [self saveNotes];
       if (cancellation.isCancelled) resolve(note); else reject(@"MODEL_LOAD_FAILED", @"The downloaded Whisper model could not be opened.", nil);
@@ -428,6 +470,7 @@ RCT_REMAP_METHOD(transcribe, noteID:(NSString *)noteID modelID:(NSString *)model
     if (cancellation.isCancelled) { whisper_free(context); dispatch_async(dispatch_get_main_queue(), ^{
       [self.activeTranscriptions removeObjectForKey:noteID];
       self.activeTranscriptionID = nil;
+      self.activeTranscriptionModelID = nil;
       note[@"status"] = previousStatus;
       [self saveNotes];
       resolve(note);
@@ -454,6 +497,7 @@ RCT_REMAP_METHOD(transcribe, noteID:(NSString *)noteID modelID:(NSString *)model
     dispatch_async(dispatch_get_main_queue(), ^{
       [self.activeTranscriptions removeObjectForKey:noteID];
       self.activeTranscriptionID = nil;
+      self.activeTranscriptionModelID = nil;
       if (cancellation.isCancelled) {
         note[@"status"] = previousStatus;
         [self saveNotes];
@@ -493,24 +537,28 @@ RCT_REMAP_METHOD(cancelTranscription, cancelNoteID:(NSString *)noteID resolver:(
   note[@"mainPoints"] = mainPoints;
 }
 
-RCT_REMAP_METHOD(summarize, summarizeNoteID:(NSString *)noteID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+RCT_REMAP_METHOD(summarize, summarizeNoteID:(NSString *)noteID modelID:(NSString *)modelID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
   NSMutableDictionary *note = [self noteWithID:noteID];
-  NSString *transcript = note[@"transcript"];
   if (!note) { reject(@"NOTE_NOT_FOUND", @"This note no longer exists.", nil); return; }
+  if (![self isSupportedSummaryModelID:modelID]) { reject(@"UNKNOWN_SUMMARY_MODEL", @"This summary model is not available.", nil); return; }
+  NSString *transcript = note[@"transcript"];
   if (transcript.length == 0) { reject(@"NO_TRANSCRIPT", @"Transcribe this note before creating study notes.", nil); return; }
-  if (![[NSFileManager defaultManager] fileExistsAtPath:self.summaryModelURL.path]) { reject(@"SUMMARY_MODEL_NOT_INSTALLED", @"Download the LFM summary model first.", nil); return; }
+  if (![[NSFileManager defaultManager] fileExistsAtPath:[self summaryModelURL:modelID].path]) { reject(@"SUMMARY_MODEL_NOT_INSTALLED", @"Download the selected summary model first.", nil); return; }
   if (self.activeSummaryID) { reject(@"ALREADY_SUMMARIZING", @"Finish the current summary before starting another.", nil); return; }
   self.activeSummaryID = noteID;
+  self.activeSummaryModelID = modelID;
   transcript = [transcript copy];
-  NSURL *modelURL = self.summaryModelURL;
+  NSURL *modelURL = [self summaryModelURL:modelID];
+  NSString *modelName = [self summaryModelForID:modelID][@"name"];
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     LlamaSummarizer *summarizer = [LlamaSummarizer new];
     NSError *summaryError;
-    NSString *generatedSummary = [summarizer summarizeTranscript:transcript modelURL:modelURL progress:^(NSString *stage) {
+    NSString *generatedSummary = [summarizer summarizeTranscript:transcript modelURL:modelURL modelName:modelName progress:^(NSString *stage) {
       [self emitSummaryStage:stage noteID:noteID];
     } error:&summaryError];
     dispatch_async(dispatch_get_main_queue(), ^{
       self.activeSummaryID = nil;
+      self.activeSummaryModelID = nil;
       if (!generatedSummary) { reject(@"SUMMARY_FAILED", summaryError.localizedDescription ?: @"Unable to create study notes.", summaryError); return; }
       [self saveGeneratedSummary:generatedSummary forNote:note];
       [self saveNotes];

@@ -35,6 +35,7 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
 
 - (NSString *)summarizeTranscript:(NSString *)transcript
                          modelURL:(NSURL *)modelURL
+                         modelName:(NSString *)modelName
                          progress:(LlamaProgressHandler)progress
                             error:(NSError **)error {
   static dispatch_once_t backendOnce;
@@ -47,12 +48,12 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
     return nil;
   }
 
-  if (progress) progress(@"Loading LFM summary model…");
+  if (progress) progress([NSString stringWithFormat:@"Loading %@…", modelName]);
   llama_model_params modelParams = llama_model_default_params();
   modelParams.n_gpu_layers = -1;
   llama_model *model = llama_model_load_from_file(modelURL.fileSystemRepresentation, modelParams);
   if (!model) {
-    if (error) *error = LlamaError(@"The LFM summary model could not be opened.");
+    if (error) *error = LlamaError(@"The selected summary model could not be opened.");
     return nil;
   }
 
@@ -64,7 +65,7 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
   llama_context *context = llama_init_from_model(model, contextParams);
   if (!context) {
     llama_model_free(model);
-    if (error) *error = LlamaError(@"The LFM summary context could not be created.");
+    if (error) *error = LlamaError(@"The selected summary context could not be created.");
     return nil;
   }
 
@@ -85,7 +86,7 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
     if (llama_decode(context, batch) != 0) {
       llama_free(context);
       llama_model_free(model);
-      if (error) *error = LlamaError(@"The LFM model could not process this transcript.");
+      if (error) *error = LlamaError(@"The selected summary model could not process this transcript.");
       return nil;
     }
   }
@@ -107,7 +108,7 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
 
   NSString *summary = [[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding];
   if (summary.length == 0) {
-    if (error) *error = LlamaError(@"The LFM model did not generate a summary.");
+    if (error) *error = LlamaError(@"The selected summary model did not generate a summary.");
     return nil;
   }
   if (progress) progress(@"Summary complete");

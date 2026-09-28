@@ -7,8 +7,8 @@ Audio, transcripts, and generated summaries stay on your Mac. An internet connec
 ## Features
 
 - Record from your Mac microphone or import an audio file.
-- Transcribe locally with Whisper Small and Metal acceleration.
-- Create local summaries and main study points with LFM2.5-1.2B-Instruct through llama.cpp and Metal.
+- Transcribe locally with multilingual Whisper Base, Small, or Medium models and Metal acceleration.
+- Create local summaries and main study points with LFM2.5-1.2B-Instruct or Qwen3.5-2B through llama.cpp and Metal.
 - Rename notes inline, replay audio, export Markdown, and permanently delete notes with their audio.
 - Cancel an in-progress transcription.
 
@@ -38,13 +38,14 @@ Models are downloaded only after selecting the corresponding download control in
 
 | Purpose       | Model                                  | Download size |
 | ------------- | -------------------------------------- | ------------- |
-| Transcription | Whisper Small or Whisper Small English | 466 MB        |
-| Study notes   | LFM2.5-1.2B-Instruct Q4_K_M            | 1.17 GB       |
+| Transcription | Whisper Base, Small, or Medium (multilingual); Small English | 142 MB to 1.53 GB |
+| Study notes   | LFM2.5-1.2B-Instruct Q4_K_M or Qwen3.5-2B Q4_K_M | 1.17 GB to 1.28 GB |
 
 The application uses the official model repositories:
 
 - [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
 - [LiquidAI/LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF)
+- [unsloth/Qwen3.5-2B-GGUF](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF)
 
 Downloaded model files, recordings, and note data are stored at:
 
@@ -52,15 +53,17 @@ Downloaded model files, recordings, and note data are stored at:
 ~/Library/Application Support/LectureScribe/
 ```
 
-The LFM model is unloaded from memory after each summary. Downloaded model files remain on disk so future summaries can start without another download.
+The active model is unloaded from memory after each transcription or summary. Downloaded model files remain on disk so future tasks can start without another download.
 
 ## Use
 
-1. Download a Whisper model from the left sidebar.
+1. Download a Whisper model from the left sidebar. Base, Small, and Medium support multiple languages; Small English is English-only.
 2. Record a class or import an audio file.
 3. Press **Transcribe**.
-4. Download the LFM model from the left sidebar, then press **Summarize** on a completed transcript.
+4. Download LFM or Qwen from the left sidebar, then press **Summarize** on a completed transcript.
 5. Click a note title to rename it, or use **Export Markdown** to save its metadata, summary, study points, and transcript.
+
+Use **Remove** beside an installed model to delete its local file. A model cannot be removed while it is transcribing or summarizing.
 
 Very long transcripts that exceed the local summary context are rejected rather than silently truncated.
 

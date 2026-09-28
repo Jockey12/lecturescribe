@@ -36,13 +36,14 @@ const formatDate = (timestamp: number) =>
 function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [models, setModels] = useState<Model[]>([]);
-  const [summaryModel, setSummaryModel] = useState<SummaryModel | null>(null);
+  const [summaryModels, setSummaryModels] = useState<SummaryModel[]>([]);
   const [modelID, setModelID] = useState<Model['id']>('small');
+  const [summaryModelID, setSummaryModelID] = useState<SummaryModel['id']>('lfm2.5-1.2b-q4-k-m');
   const [recording, setRecording] = useState(false);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [downloading, setDownloading] = useState<Model['id'] | null>(null);
-  const [downloadingSummaryModel, setDownloadingSummaryModel] = useState(false);
+  const [downloadingSummaryModel, setDownloadingSummaryModel] = useState<SummaryModel['id'] | null>(null);
   const [playingID, setPlayingID] = useState<string | null>(null);
   const [cancellingID, setCancellingID] = useState<string | null>(null);
   const [transcriptionStages, setTranscriptionStages] = useState<Record<string, string>>({});
@@ -52,14 +53,14 @@ function App() {
 
   const refresh = async () => {
     if (!hasNativeLectureScribe) return;
-    const [savedNotes, availableModels, availableSummaryModel] = await Promise.all([
+    const [savedNotes, availableModels, availableSummaryModels] = await Promise.all([
       lectureScribe.getNotes(),
       lectureScribe.getModels(),
-      lectureScribe.getSummaryModel(),
+      lectureScribe.getSummaryModels(),
     ]);
     setNotes(savedNotes);
     setModels(availableModels);
-    setSummaryModel(availableSummaryModel);
+    setSummaryModels(availableSummaryModels);
   };
 
   useEffect(() => {
@@ -139,18 +140,47 @@ function App() {
     }
   };
 
-  const downloadSummaryModel = async () => {
-    setDownloadingSummaryModel(true);
+  const downloadSummaryModel = async (id: SummaryModel['id']) => {
+    setDownloadingSummaryModel(id);
     try {
-      await lectureScribe.downloadSummaryModel();
+      await lectureScribe.downloadSummaryModel(id);
       await refresh();
+      setSummaryModelID(id);
       return true;
     } catch (error) {
       showError(error);
       return false;
     } finally {
-      setDownloadingSummaryModel(false);
+      setDownloadingSummaryModel(null);
     }
+  };
+
+  const deleteModel = (model: Model) => {
+    Alert.alert('Remove model?', `${model.name} will be removed from this Mac. You can download it again later.`, [
+      {text: 'Cancel', style: 'cancel'},
+      {text: 'Remove', style: 'destructive', onPress: async () => {
+        try {
+          await lectureScribe.deleteModel(model.id);
+          await refresh();
+        } catch (error) {
+          showError(error);
+        }
+      }},
+    ]);
+  };
+
+  const deleteSummaryModel = (model: SummaryModel) => {
+    Alert.alert('Remove model?', `${model.name} will be removed from this Mac. You can download it again later.`, [
+      {text: 'Cancel', style: 'cancel'},
+      {text: 'Remove', style: 'destructive', onPress: async () => {
+        try {
+          await lectureScribe.deleteSummaryModel(model.id);
+          await refresh();
+        } catch (error) {
+          showError(error);
+        }
+      }},
+    ]);
   };
 
   const transcribe = async (note: Note) => {
@@ -247,13 +277,14 @@ function App() {
   };
 
   const summarize = async (note: Note) => {
-    if (!summaryModel?.installed) {
-      const downloaded = await downloadSummaryModel();
+    const selected = summaryModels.find(model => model.id === summaryModelID);
+    if (!selected?.installed) {
+      const downloaded = await downloadSummaryModel(summaryModelID);
       if (!downloaded) return;
     }
     setSummarizingID(note.id);
     try {
-      const updated = await lectureScribe.summarize(note.id);
+      const updated = await lectureScribe.summarize(note.id, summaryModelID);
       setNotes(current => current.map(item => (item.id === updated.id ? updated : item)));
     } catch (error) {
       showError(error);
@@ -268,6 +299,7 @@ function App() {
   };
 
   const currentModel = models.find(model => model.id === modelID);
+  const currentSummaryModel = summaryModels.find(model => model.id === summaryModelID);
   const activeTranscriptionID = notes.find(note => note.status === 'transcribing')?.id;
 
   return (
@@ -290,7 +322,7 @@ function App() {
                 <Text style={styles.modelName}>{model.name}</Text>
                 <Text style={styles.modelMeta}>{model.size} · {model.installed ? 'Ready' : 'Not installed'}</Text>
               </View>
-              {model.installed ? <View style={styles.readyDot} /> : null}
+              {model.installed ? <Pressable accessibilityRole="button" onPress={() => deleteModel(model)} style={styles.removeModelButton}><Text style={styles.removeModelText}>Remove</Text></Pressable> : null}
             </Pressable>
           ))}
           {!currentModel?.installed ? (
@@ -299,18 +331,21 @@ function App() {
             </Pressable>
           ) : null}
           <Text style={styles.panelLabel}>LOCAL SUMMARIZER</Text>
-          {summaryModel ? (
-            <View style={styles.modelRow}>
+          {summaryModels.map(model => (
+            <Pressable
+              key={model.id}
+              onPress={() => setSummaryModelID(model.id)}
+              style={[styles.modelRow, model.id === summaryModelID && styles.modelRowActive]}>
               <View style={styles.modelCopy}>
-                <Text style={styles.modelName}>{summaryModel.name}</Text>
-                <Text style={styles.modelMeta}>{summaryModel.size} · {summaryModel.installed ? 'Ready' : 'Not installed'}</Text>
+                <Text style={styles.modelName}>{model.name}</Text>
+                <Text style={styles.modelMeta}>{model.size} · {model.installed ? 'Ready' : 'Not installed'}</Text>
               </View>
-              {summaryModel.installed ? <View style={styles.readyDot} /> : null}
-            </View>
-          ) : null}
-          {!summaryModel?.installed ? (
-            <Pressable onPress={downloadSummaryModel} disabled={downloadingSummaryModel} style={[styles.downloadButton, downloadingSummaryModel && styles.actionDisabled]}>
-              <Text style={styles.downloadText}>{downloadingSummaryModel ? 'Downloading LFM…' : 'Download LFM model'}</Text>
+              {model.installed ? <Pressable accessibilityRole="button" onPress={() => deleteSummaryModel(model)} style={styles.removeModelButton}><Text style={styles.removeModelText}>Remove</Text></Pressable> : null}
+            </Pressable>
+          ))}
+          {!currentSummaryModel?.installed ? (
+            <Pressable onPress={() => downloadSummaryModel(summaryModelID)} disabled={Boolean(downloadingSummaryModel)} style={[styles.downloadButton, downloadingSummaryModel && styles.actionDisabled]}>
+              <Text style={styles.downloadText}>{downloadingSummaryModel === summaryModelID ? 'Downloading…' : 'Download model'}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -418,7 +453,7 @@ const styles = StyleSheet.create({
   modelPanel: {marginTop: 45}, panelLabel: {marginTop: 22, fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: '#8f9d89'},
   modelRow: {marginTop: 10, padding: 13, borderWidth: 1, borderColor: '#304033', borderRadius: 9, flexDirection: 'row', alignItems: 'center'},
   modelRowActive: {borderColor: '#bfd585', backgroundColor: '#223023'}, modelCopy: {flex: 1}, modelName: {fontSize: 13, color: '#f6f2e7', fontWeight: '600'},
-  modelMeta: {marginTop: 4, fontSize: 11, color: '#9eaa9b'}, readyDot: {width: 7, height: 7, borderRadius: 5, backgroundColor: '#c7e87e'},
+  modelMeta: {marginTop: 4, fontSize: 11, color: '#9eaa9b'}, removeModelButton: {marginLeft: 10, paddingVertical: 5, paddingHorizontal: 7, borderWidth: 1, borderColor: '#65715f', borderRadius: 5}, removeModelText: {fontSize: 10, color: '#e6b2a9', fontWeight: '700'},
   downloadButton: {marginTop: 12, alignItems: 'center', padding: 12, borderRadius: 8, backgroundColor: '#c8df8b'}, downloadText: {fontSize: 12, fontWeight: '700', color: '#172019'},
   importButton: {alignItems: 'center', padding: 13, borderWidth: 1, borderColor: '#65715f', borderRadius: 8}, importText: {fontSize: 13, color: '#ecf0e8', fontWeight: '600'},
   workspace: {flex: 1, minWidth: 520, paddingHorizontal: 48, paddingTop: 44}, recordingArea: {alignItems: 'center', paddingVertical: 28, borderBottomWidth: 1, borderBottomColor: '#ddd9cf'},

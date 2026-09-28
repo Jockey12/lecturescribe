@@ -16,7 +16,7 @@ export type Note = {
 };
 
 export type Model = {
-  id: 'small' | 'small.en';
+  id: 'base' | 'small' | 'medium' | 'small.en';
   name: string;
   size: string;
   installed: boolean;
@@ -28,7 +28,7 @@ export type TranscriptionProgress = {
 };
 
 export type SummaryModel = {
-  id: 'lfm2.5-1.2b-q4-k-m';
+  id: 'lfm2.5-1.2b-q4-k-m' | 'qwen3.5-2b-q4-k-m';
   name: string;
   size: string;
   installed: boolean;
@@ -43,8 +43,10 @@ type LectureScribeNative = {
   getNotes(): Promise<Note[]>;
   getModels(): Promise<Model[]>;
   downloadModel(modelID: Model['id']): Promise<boolean>;
-  getSummaryModel(): Promise<SummaryModel>;
-  downloadSummaryModel(): Promise<boolean>;
+  deleteModel(modelID: Model['id']): Promise<boolean>;
+  getSummaryModels(): Promise<SummaryModel[]>;
+  downloadSummaryModel(modelID: SummaryModel['id']): Promise<boolean>;
+  deleteSummaryModel(modelID: SummaryModel['id']): Promise<boolean>;
   startRecording(): Promise<{id: string}>;
   stopRecording(): Promise<Note>;
   importAudio(): Promise<Note | null>;
@@ -55,7 +57,7 @@ type LectureScribeNative = {
   renameNote(noteID: string, title: string): Promise<Note>;
   deleteNote(noteID: string): Promise<boolean>;
   exportMarkdown(noteID: string): Promise<string | null>;
-  summarize(noteID: string): Promise<Note>;
+  summarize(noteID: string, modelID: SummaryModel['id']): Promise<Note>;
   addListener(eventType: string): void;
   removeListeners(count: number): void;
 };
