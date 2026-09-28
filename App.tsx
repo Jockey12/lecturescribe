@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  PlatformColor,
   Pressable,
   ScrollView,
   StatusBar,
@@ -358,7 +359,7 @@ function App() {
           <Text style={styles.sidebarTitle}>LectureScribe</Text>
           <Pressable
             accessibilityRole="button"
-            onPress={startRecording}
+            onPress={recording ? stopRecording : startRecording}
             style={styles.newNoteButton}
           >
             <Text style={styles.newNoteButtonText}>New Recording</Text>
@@ -455,6 +456,11 @@ function App() {
               <Text style={styles.downloadText}>
                 {downloading === modelID ? 'Downloading…' : 'Download model'}
               </Text>
+              {downloading === modelID ? (
+                <View style={styles.downloadProgress}>
+                  <View style={styles.downloadProgressFill} />
+                </View>
+              ) : null}
             </Pressable>
           ) : null}
           <Text style={styles.panelLabel}>LOCAL SUMMARIZER</Text>
@@ -498,6 +504,11 @@ function App() {
                   ? 'Downloading…'
                   : 'Download model'}
               </Text>
+              {downloadingSummaryModel === summaryModelID ? (
+                <View style={styles.downloadProgress}>
+                  <View style={styles.downloadProgressFill} />
+                </View>
+              ) : null}
             </Pressable>
           ) : null}
         </View>
@@ -508,7 +519,26 @@ function App() {
 
       <View style={styles.workspace}>
         <View style={styles.toolbar}>
-          <Text style={styles.toolbarTitle}>All Notes</Text>
+          <View style={styles.toolbarHeading}>
+            <Text style={styles.toolbarTitle}>
+              {recording ? 'Recording' : 'All Notes'}
+            </Text>
+            {recording ? (
+              <>
+                <View style={styles.recordingIndicator}>
+                  <View style={styles.recordingDot} />
+                  <View style={styles.levelMeter}>
+                    {[8, 14, 10, 18, 12].map((height, index) => (
+                      <View key={index} style={[styles.levelBar, { height }]} />
+                    ))}
+                  </View>
+                </View>
+                <Text style={styles.toolbarTimer}>
+                  {formatDuration(elapsed)}
+                </Text>
+              </>
+            ) : null}
+          </View>
           <View style={styles.toolbarActions}>
             <Pressable
               accessibilityRole="button"
@@ -776,52 +806,61 @@ const styles = StyleSheet.create({
   },
   noteRowStatus: { fontSize: type.caption, color: color.secondaryLabel },
   noteRowTextSelected: { color: color.selectedText },
-  modelPanel: { marginTop: 45 },
+  modelPanel: { marginTop: space[4] },
   panelLabel: {
-    marginTop: 22,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    color: '#8f9d89',
+    marginTop: space[4],
+    fontSize: type.caption,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    color: color.secondaryLabel,
   },
   modelRow: {
-    marginTop: 10,
-    padding: 13,
-    borderWidth: 1,
-    borderColor: '#304033',
-    borderRadius: 9,
+    marginTop: space[1],
+    paddingVertical: space[1],
+    paddingHorizontal: space[2],
     flexDirection: 'row',
     alignItems: 'center',
   },
-  modelRowActive: { borderColor: '#bfd585', backgroundColor: '#223023' },
+  modelRowActive: {
+    backgroundColor: color.unobtrusiveSelectedContentBackground,
+  },
   modelCopy: { flex: 1 },
-  modelName: { fontSize: 13, color: '#f6f2e7', fontWeight: '600' },
-  modelMeta: { marginTop: 4, fontSize: 11, color: '#9eaa9b' },
+  modelName: { fontSize: type.body, color: color.label, fontWeight: '500' },
+  modelMeta: {
+    marginTop: 2,
+    fontSize: type.caption,
+    color: color.secondaryLabel,
+  },
   removeModelButton: {
-    marginLeft: 10,
-    paddingVertical: 5,
-    paddingHorizontal: 7,
-    borderWidth: 1,
-    borderColor: '#65715f',
-    borderRadius: 5,
+    marginLeft: space[2],
+    paddingHorizontal: space[1],
+    minHeight: control.compactHeight,
+    justifyContent: 'center',
   },
-  removeModelText: { fontSize: 10, color: '#e6b2a9', fontWeight: '700' },
+  removeModelText: { fontSize: type.caption, color: color.accent },
   downloadButton: {
-    marginTop: 12,
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#c8df8b',
+    marginTop: space[2],
+    paddingHorizontal: space[2],
+    paddingVertical: space[1],
   },
-  downloadText: { fontSize: 12, fontWeight: '700', color: '#172019' },
+  downloadText: { fontSize: type.body, fontWeight: '500', color: color.accent },
+  downloadProgress: {
+    marginTop: space[1],
+    height: 2,
+    backgroundColor: color.separator,
+  },
+  downloadProgressFill: {
+    width: '55%',
+    height: 2,
+    backgroundColor: color.accent,
+  },
   importButton: {
-    alignItems: 'center',
-    padding: 13,
-    borderWidth: 1,
-    borderColor: '#65715f',
-    borderRadius: 8,
+    marginTop: space[3],
+    minHeight: control.compactHeight,
+    justifyContent: 'center',
+    paddingHorizontal: space[2],
   },
-  importText: { fontSize: 13, color: '#ecf0e8', fontWeight: '600' },
+  importText: { fontSize: type.body, color: color.accent },
   workspace: { flex: 1, minWidth: 520, backgroundColor: color.background },
   toolbar: {
     height: control.toolbarHeight,
@@ -832,7 +871,35 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: color.separator,
   },
+  toolbarHeading: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   toolbarTitle: { fontSize: type.title, fontWeight: '600', color: color.label },
+  recordingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+  },
+  recordingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: PlatformColor('systemRedColor'),
+  },
+  levelMeter: {
+    height: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  levelBar: {
+    width: 2,
+    borderRadius: 1,
+    backgroundColor: color.secondaryLabel,
+  },
+  toolbarTimer: {
+    fontSize: type.body,
+    color: color.secondaryLabel,
+    fontVariant: ['tabular-nums'],
+  },
   toolbarActions: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   toolbarButton: {
     paddingHorizontal: space[2],
