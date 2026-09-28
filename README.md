@@ -1,97 +1,117 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# LectureScribe
 
-# Getting Started
+LectureScribe is a local-first macOS app for recording or importing lectures, transcribing them on-device, and turning completed transcripts into study notes.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+Audio, transcripts, and generated summaries stay on your Mac. An internet connection is used only when you explicitly download a model.
 
-## Step 1: Start Metro
+## Features
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- Record from your Mac microphone or import an audio file.
+- Transcribe locally with Whisper Small and Metal acceleration.
+- Create local summaries and main study points with LFM2.5-1.2B-Instruct through llama.cpp and Metal.
+- Rename notes inline, replay audio, export Markdown, and permanently delete notes with their audio.
+- Cancel an in-progress transcription.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Requirements
 
-```sh
-# Using npm
-npm start
+- macOS 14 or later.
+- Node.js 18 or later.
+- Xcode and Xcode Command Line Tools.
+- CocoaPods.
+- Apple Silicon is recommended for best Metal inference performance.
 
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
+## Run From Source
 
 ```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+npm install
+cd macos
+pod install
+cd ..
+npm run macos
 ```
 
-### iOS
+`npm run macos` starts Metro and launches the Debug macOS app.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Local Models
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+Models are downloaded only after selecting the corresponding download control in the app.
+
+| Purpose       | Model                                  | Download size |
+| ------------- | -------------------------------------- | ------------- |
+| Transcription | Whisper Small or Whisper Small English | 466 MB        |
+| Study notes   | LFM2.5-1.2B-Instruct Q4_K_M            | 1.17 GB       |
+
+The application uses the official model repositories:
+
+- [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
+- [LiquidAI/LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF)
+
+Downloaded model files, recordings, and note data are stored at:
+
+```text
+~/Library/Application Support/LectureScribe/
+```
+
+The LFM model is unloaded from memory after each summary. Downloaded model files remain on disk so future summaries can start without another download.
+
+## Use
+
+1. Download a Whisper model from the left sidebar.
+2. Record a class or import an audio file.
+3. Press **Transcribe**.
+4. Download the LFM model from the left sidebar, then press **Summarize** on a completed transcript.
+5. Click a note title to rename it, or use **Export Markdown** to save its metadata, summary, study points, and transcript.
+
+Very long transcripts that exceed the local summary context are rejected rather than silently truncated.
+
+## Checks
 
 ```sh
-bundle install
+npm run lint
+npx tsc --noEmit
+npm test -- --runInBand
 ```
 
-Then, and every time you update your native dependencies, run:
+To validate the native macOS build:
 
 ```sh
-bundle exec pod install
+xcodebuild \
+  -workspace "macos/LectureScribe.xcworkspace" \
+  -scheme "LectureScribe-macOS" \
+  -configuration Debug \
+  -sdk macosx \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## GitHub Test Builds
+
+GitHub builds are unsigned test builds. macOS may require users to Control-click the app, choose **Open**, then confirm **Open** again.
+
+If Gatekeeper still blocks an app that a user intentionally downloaded from this repository:
 
 ```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+xattr -dr com.apple.quarantine /Applications/LectureScribe.app
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+Build and package an unsigned Release app for a GitHub Release:
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+```sh
+xcodebuild \
+  -workspace "macos/LectureScribe.xcworkspace" \
+  -scheme "LectureScribe-macOS" \
+  -configuration Release \
+  -sdk macosx \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 
-## Step 3: Modify your app
+ditto -c -k --sequesterRsrc --keepParent \
+  "/path/to/LectureScribe.app" \
+  "LectureScribe-macOS-unsigned.zip"
+```
 
-Now that you have successfully run the app, let's make changes!
+The DerivedData folder name can differ between Macs. Locate the generated `LectureScribe.app` under Xcode's DerivedData folder before running the packaging command.
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+## Privacy
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+LectureScribe does not send recordings, transcripts, or summaries to a transcription or AI service. Model downloads are requested directly by the user and use the app's network permission only for that purpose.
