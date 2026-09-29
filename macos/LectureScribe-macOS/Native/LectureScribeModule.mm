@@ -408,7 +408,8 @@ RCT_REMAP_METHOD(exportMarkdown, exportNoteID:(NSString *)noteID resolver:(RCTPr
   NSMutableDictionary *note = [self noteWithID:noteID];
   if (!note) { reject(@"NOTE_NOT_FOUND", @"This note no longer exists.", nil); return; }
   NSSavePanel *panel = [NSSavePanel savePanel];
-  panel.allowedContentTypes = @[ UTTypeMarkdown ];
+  UTType *markdownType = [UTType typeWithFilenameExtension:@"md"];
+  panel.allowedContentTypes = @[ markdownType ?: UTTypePlainText ];
   panel.nameFieldStringValue = [NSString stringWithFormat:@"%@.md", note[@"title"]];
   if ([panel runModal] != NSModalResponseOK) { resolve(nil); return; }
   NSError *writeError;
