@@ -33,20 +33,14 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
 
 @implementation LlamaSummarizer
 
-- (NSString *)summarizeTranscript:(NSString *)transcript
-                         modelURL:(NSURL *)modelURL
-                         modelName:(NSString *)modelName
-                         progress:(LlamaProgressHandler)progress
-                            error:(NSError **)error {
+- (NSString *)generateStudyMaterialForTranscript:(NSString *)transcript
+                                     instructions:(NSString *)instructions
+                                         modelURL:(NSURL *)modelURL
+                                        modelName:(NSString *)modelName
+                                         progress:(LlamaProgressHandler)progress
+                                            error:(NSError **)error {
   static dispatch_once_t backendOnce;
   dispatch_once(&backendOnce, ^{ llama_backend_init(); });
-
-  NSString *prompt = [NSString stringWithFormat:@"<|im_start|>system\nYou create accurate, concise study aids from lecture transcripts. Do not invent facts.\n<|im_end|>\n<|im_start|>user\nWrite a concise summary followed by the most important study points. Use exactly this format:\nSummary:\n<short paragraphs>\n\nMain points:\n- <point>\n\nTranscript:\n%@\n<|im_end|>\n<|im_start|>assistant\n", transcript];
-  const char *promptUTF8 = prompt.UTF8String;
-  if (!promptUTF8) {
-    if (error) *error = LlamaError(@"The transcript could not be encoded for the summary model.");
-    return nil;
-  }
 
   if (progress) progress([NSString stringWithFormat:@"Loading %@…", modelName]);
   llama_model_params modelParams = llama_model_default_params();
@@ -70,8 +64,37 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
   }
 
   const llama_vocab *vocab = llama_model_get_vocab(model);
-  std::vector<llama_token> tokens = Tokenize(vocab, promptUTF8);
-  const int32_t maxGeneratedTokens = 512;
+  NSString *systemMessage = @"You turn lecture transcripts into accurate study aids. Use only information stated or clearly explained in the transcript. Do not invent facts, examples, names, or definitions.";
+  NSString *userMessage = [NSString stringWithFormat:@"%@\n\nTranscript:\n%@", instructions, transcript];
+  const char *systemUTF8 = systemMessage.UTF8String;
+  const char *userUTF8 = userMessage.UTF8String;
+  const char *chatTemplate = llama_model_chat_template(model, nullptr);
+  if (!systemUTF8 || !userUTF8 || !chatTemplate) {
+    llama_free(context);
+    llama_model_free(model);
+    if (error) *error = LlamaError(@"The selected summary model could not prepare a chat prompt.");
+    return nil;
+  }
+  llama_chat_message messages[] = {
+    { "system", systemUTF8 },
+    { "user", userUTF8 },
+  };
+  int32_t promptLength = llama_chat_apply_template(chatTemplate, messages, 2, true, nullptr, 0);
+  if (promptLength <= 0) {
+    llama_free(context);
+    llama_model_free(model);
+    if (error) *error = LlamaError(@"The selected summary model could not format a chat prompt.");
+    return nil;
+  }
+  std::vector<char> promptBuffer(promptLength + 1);
+  if (llama_chat_apply_template(chatTemplate, messages, 2, true, promptBuffer.data(), (int32_t)promptBuffer.size()) <= 0) {
+    llama_free(context);
+    llama_model_free(model);
+    if (error) *error = LlamaError(@"The selected summary model could not format a chat prompt.");
+    return nil;
+  }
+  std::vector<llama_token> tokens = Tokenize(vocab, std::string(promptBuffer.data(), promptLength));
+  const int32_t maxGeneratedTokens = 768;
   if (tokens.empty() || tokens.size() + maxGeneratedTokens > llama_n_ctx(context)) {
     llama_free(context);
     llama_model_free(model);
@@ -113,6 +136,15 @@ static std::string TokenPiece(const llama_vocab *vocab, llama_token token) {
   }
   if (progress) progress(@"Summary complete");
   return [summary stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+- (NSString *)summarizeTranscript:(NSString *)transcript
+                         modelURL:(NSURL *)modelURL
+                         modelName:(NSString *)modelName
+                         progress:(LlamaProgressHandler)progress
+                            error:(NSError **)error {
+  NSString *instructions = @"Create study notes from the transcript below. Return only this structure, with no preface or closing text:\n\nStudy points:\n- Write 5 to 8 distinct, specific takeaways that are useful to review for an exam.\n- Keep each takeaway to one sentence of 25 words or fewer.\n- Prefer definitions, relationships, processes, claims, caveats, and named concepts stated in the transcript.\n\nSummary:\nWrite one concise paragraph of no more than 120 words covering the lecture's central idea and supporting concepts.";
+  return [self generateStudyMaterialForTranscript:transcript instructions:instructions modelURL:modelURL modelName:modelName progress:progress error:error];
 }
 
 @end

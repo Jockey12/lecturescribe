@@ -713,7 +713,9 @@ function App() {
                   ))
                 ) : (
                   <Text style={styles.readingText}>
-                    Study points will appear with the summary.
+                    {selectedNote.summary
+                      ? 'Study points were not generated for this summary. Choose Summarize Again to try again.'
+                      : 'Summarize this transcript to generate study points.'}
                   </Text>
                 )
               ) : null}

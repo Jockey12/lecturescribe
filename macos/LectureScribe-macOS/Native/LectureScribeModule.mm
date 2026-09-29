@@ -29,6 +29,8 @@
 @property(nonatomic, copy) NSString *activeSummaryID;
 @property(nonatomic, copy) NSString *activeSummaryModelID;
 @property(nonatomic) BOOL microphonePermissionRequestInFlight;
+- (NSArray<NSString *> *)studyPointsFromGeneratedText:(NSString *)generatedText;
+- (NSArray<NSString *> *)fallbackStudyPointsFromSummary:(NSString *)summary;
 - (void)emitTranscriptionStage:(NSString *)stage noteID:(NSString *)noteID;
 - (void)emitSummaryStage:(NSString *)stage noteID:(NSString *)noteID;
 - (void)beginRecordingWithResolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject;
@@ -66,15 +68,28 @@ RCT_EXPORT_MODULE(LectureScribe)
     _notes = [NSMutableArray array];
     _activeTranscriptions = [NSMutableDictionary dictionary];
     BOOL recoveredInterruptedTranscription = NO;
+    BOOL recoveredStudyPoints = NO;
     for (NSDictionary *savedNote in [self loadNotes]) {
       NSMutableDictionary *note = [savedNote mutableCopy];
       if ([note[@"status"] isEqualToString:@"transcribing"]) {
         note[@"status"] = @"ready";
         recoveredInterruptedTranscription = YES;
       }
+      NSString *summary = note[@"summary"];
+      NSArray *mainPoints = note[@"mainPoints"];
+      if (summary.length > 0 && mainPoints.count == 0) {
+        NSArray<NSString *> *recoveredPoints = [self studyPointsFromGeneratedText:summary];
+        if (recoveredPoints.count == 0) {
+          recoveredPoints = [self fallbackStudyPointsFromSummary:summary];
+        }
+        if (recoveredPoints.count > 0) {
+          note[@"mainPoints"] = recoveredPoints;
+          recoveredStudyPoints = YES;
+        }
+      }
       [_notes addObject:note];
     }
-    if (recoveredInterruptedTranscription) [self saveNotes];
+    if (recoveredInterruptedTranscription || recoveredStudyPoints) [self saveNotes];
   }
   return self;
 }
@@ -520,7 +535,13 @@ RCT_REMAP_METHOD(transcribe, noteID:(NSString *)noteID modelID:(NSString *)model
         return;
       }
       note[@"status"] = result == 0 ? @"complete" : previousStatus;
-      if (result == 0) { note[@"transcript"] = text; note[@"segments"] = segments; note[@"modelID"] = modelID; }
+      if (result == 0) {
+        note[@"transcript"] = text;
+        note[@"segments"] = segments;
+        note[@"modelID"] = modelID;
+        [note removeObjectForKey:@"summary"];
+        [note removeObjectForKey:@"mainPoints"];
+      }
       [self saveNotes];
       if (result == 0) resolve(note); else reject(@"TRANSCRIPTION_FAILED", @"Whisper could not transcribe this recording.", nil);
     });
@@ -534,22 +555,92 @@ RCT_REMAP_METHOD(cancelTranscription, cancelNoteID:(NSString *)noteID resolver:(
   resolve(@YES);
 }
 
-- (void)saveGeneratedSummary:(NSString *)generatedSummary forNote:(NSMutableDictionary *)note {
-  NSRange mainPointsRange = [generatedSummary rangeOfString:@"Main points:" options:NSCaseInsensitiveSearch];
-  NSString *summary = mainPointsRange.location == NSNotFound ? generatedSummary : [generatedSummary substringToIndex:mainPointsRange.location];
-  summary = [summary stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-  if ([[summary lowercaseString] hasPrefix:@"summary:"]) summary = [[summary substringFromIndex:[@"Summary:" length]] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+- (BOOL)isStudyPointsHeading:(NSString *)line {
+  static NSRegularExpression *headingExpression;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    headingExpression = [NSRegularExpression regularExpressionWithPattern:@"^(?:#{1,6}\\s*)?(?:\\*{1,2}\\s*)?(?:(?:main|study|key)\\s+)?(?:points?|takeaways)\\s*:?(?:\\s*\\*{1,2})?\\s*:?$" options:NSRegularExpressionCaseInsensitive error:nil];
+  });
+  NSRange range = NSMakeRange(0, line.length);
+  return [headingExpression firstMatchInString:line options:0 range:range] != nil;
+}
 
-  NSMutableArray *mainPoints = [NSMutableArray array];
-  if (mainPointsRange.location != NSNotFound) {
-    NSString *pointsText = [generatedSummary substringFromIndex:NSMaxRange(mainPointsRange)];
-    for (NSString *line in [pointsText componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
-      NSString *trimmedLine = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-      if ([trimmedLine hasPrefix:@"- "] || [trimmedLine hasPrefix:@"* "]) [mainPoints addObject:[[trimmedLine substringFromIndex:2] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet]];
+- (BOOL)isSummaryHeading:(NSString *)line {
+  static NSRegularExpression *headingExpression;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    headingExpression = [NSRegularExpression regularExpressionWithPattern:@"^(?:#{1,6}\\s*)?(?:\\*{1,2}\\s*)?summary\\s*:?(?:\\s*\\*{1,2})?\\s*:?$" options:NSRegularExpressionCaseInsensitive error:nil];
+  });
+  NSRange range = NSMakeRange(0, line.length);
+  return [headingExpression firstMatchInString:line options:0 range:range] != nil;
+}
+
+- (NSString *)studyPointFromLine:(NSString *)line {
+  static NSRegularExpression *bulletExpression;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    bulletExpression = [NSRegularExpression regularExpressionWithPattern:@"^(?:[-*•]\\s+|\\d+[.)]\\s+)(.+)$" options:0 error:nil];
+  });
+  NSTextCheckingResult *match = [bulletExpression firstMatchInString:line options:0 range:NSMakeRange(0, line.length)];
+  if (!match) return nil;
+  NSString *point = [line substringWithRange:[match rangeAtIndex:1]];
+  return [point stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+- (NSArray<NSString *> *)studyPointsFromGeneratedText:(NSString *)generatedText {
+  NSMutableArray<NSString *> *mainPoints = [NSMutableArray array];
+  NSMutableSet<NSString *> *seenPoints = [NSMutableSet set];
+  for (NSString *line in [generatedText componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+    NSString *trimmedLine = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *point = [self studyPointFromLine:trimmedLine];
+    if (point.length > 0 && ![seenPoints containsObject:point.lowercaseString]) {
+      [mainPoints addObject:point];
+      [seenPoints addObject:point.lowercaseString];
     }
+  }
+  return mainPoints;
+}
+
+- (NSArray<NSString *> *)fallbackStudyPointsFromSummary:(NSString *)summary {
+  NSMutableArray<NSString *> *mainPoints = [NSMutableArray array];
+  NSMutableSet<NSString *> *seenPoints = [NSMutableSet set];
+  NSRange range = NSMakeRange(0, summary.length);
+  [summary enumerateSubstringsInRange:range options:NSStringEnumerationBySentences usingBlock:^(NSString *sentence, NSRange sentenceRange, NSRange enclosingRange, BOOL *stop) {
+    NSString *point = [sentence stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (point.length < 12 || [self isSummaryHeading:point] || [self isStudyPointsHeading:point]) return;
+    if (![seenPoints containsObject:point.lowercaseString]) {
+      [mainPoints addObject:point];
+      [seenPoints addObject:point.lowercaseString];
+    }
+    if (mainPoints.count == 5) *stop = YES;
+  }];
+  return mainPoints;
+}
+
+- (BOOL)saveGeneratedSummary:(NSString *)generatedSummary forNote:(NSMutableDictionary *)note error:(NSError **)error {
+  NSMutableArray<NSString *> *summaryLines = [NSMutableArray array];
+  NSArray<NSString *> *mainPoints = [self studyPointsFromGeneratedText:generatedSummary];
+  for (NSString *line in [generatedSummary componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+    NSString *trimmedLine = [line stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if ([self isSummaryHeading:trimmedLine] || [self isStudyPointsHeading:trimmedLine] || [self studyPointFromLine:trimmedLine]) {
+      continue;
+    }
+    [summaryLines addObject:line];
+  }
+  NSString *summary = [[summaryLines componentsJoinedByString:@"\n"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  if (summary.length == 0 && mainPoints.count > 0) {
+    summary = [mainPoints componentsJoinedByString:@" "];
+  }
+  if (summary.length == 0) {
+    if (error) *error = [NSError errorWithDomain:@"LectureScribe.Summary" code:1 userInfo:@{ NSLocalizedDescriptionKey: @"The summary model did not return usable summary text." }];
+    return NO;
+  }
+  if (mainPoints.count == 0) {
+    mainPoints = [self fallbackStudyPointsFromSummary:summary];
   }
   note[@"summary"] = summary;
   note[@"mainPoints"] = mainPoints;
+  return YES;
 }
 
 RCT_REMAP_METHOD(summarize, summarizeNoteID:(NSString *)noteID modelID:(NSString *)modelID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
@@ -575,7 +666,11 @@ RCT_REMAP_METHOD(summarize, summarizeNoteID:(NSString *)noteID modelID:(NSString
       self.activeSummaryID = nil;
       self.activeSummaryModelID = nil;
       if (!generatedSummary) { reject(@"SUMMARY_FAILED", summaryError.localizedDescription ?: @"Unable to create study notes.", summaryError); return; }
-      [self saveGeneratedSummary:generatedSummary forNote:note];
+      NSError *formatError;
+      if (![self saveGeneratedSummary:generatedSummary forNote:note error:&formatError]) {
+        reject(@"SUMMARY_FORMAT_FAILED", formatError.localizedDescription, formatError);
+        return;
+      }
       [self saveNotes];
       resolve(note);
     });
